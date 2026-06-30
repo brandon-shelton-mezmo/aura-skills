@@ -26,6 +26,32 @@ Before investigating any pod, do this:
    - Is it on the request path for the failing surface? (A broken pod in an unrelated workload is not the cause.)
 4. **Pick a single primary suspect.** If you cannot, list two or three candidate pods with the evidence for/against each — that is your diagnosis output. Do not pick the first one alphabetically or the one with the most restarts.
 
+### MANDATORY: for every broken Deployment, dump the liveness/readiness probe spec
+
+For every broken Deployment you identify in step 2a, fetch its container's probe spec explicitly:
+
+```
+kubectl get deploy <name> -n <ns> -o jsonpath='{.spec.template.spec.containers[*].livenessProbe}'
+kubectl get deploy <name> -n <ns> -o jsonpath='{.spec.template.spec.containers[*].readinessProbe}'
+```
+
+Then **inspect for aggressive/misconfigured probe settings**:
+
+| Setting | Suspicious value | Why it's a likely root cause |
+|---|---|---|
+| `failureThreshold` | `1` (or any value `< 3`) | A single failed probe immediately kills the container. Combined with any startup variability, this *will* cause CrashLoop. The Kubernetes default is `3` for a reason. |
+| `initialDelaySeconds` | `0` or very low (`< 5`) | Probe fires before app has a chance to initialize. Apps with non-trivial startup (JVM, Phoenix/Elixir, Next.js builds) will be killed before they can serve a single response. |
+| `timeoutSeconds` | `1` | Single-second timeout fails on any GC pause, cold cache, or moderate load. |
+| `path` (HTTP probe) | Returns 404, 500, or doesn't exist | Probe targets a path the app doesn't serve. App is healthy; probe configuration is the bug. |
+| `port` (HTTP probe) | Doesn't match `containerPort` | Probe hits a port the app isn't listening on. |
+
+**A Deployment with a misconfigured probe will produce identical symptoms to an app that's crashing** (CrashLoopBackOff, restart count climbing, pod NotReady). The only way to distinguish them is to read the probe spec AND the app logs:
+
+- Probe misconfiguration → probe spec has a suspicious value (table above) + app logs show normal request processing / "ready" / "listening on port X" before the kill
+- App crash → probe spec looks fine + app logs show panic / OOM / startup error
+
+If you find any broken Deployment whose probe matches the suspicious column above AND whose app logs show normal startup, **that probe spec is your primary root cause** — even if another broken deployment in the same cluster looks more dramatic (large OOM, tiny memory limit, obvious chart-default mistake). A probe-misconfigured pod is a stealthy fault; a low-memory-limit pod is an obvious one. Stealthy faults are exactly what humans miss and what you should preferentially surface.
+
 ### Critical: "high restart count" is NOT the same as "this is the broken thing"
 
 When multiple pods are broken, do not pick the one with the largest restart count. Apply this generic SRE heuristic:
