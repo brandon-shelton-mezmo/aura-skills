@@ -25,6 +25,19 @@ Before investigating any pod, do this:
    - Is it on the request path for the failing surface? (A broken pod in an unrelated workload is not the cause.)
 4. **Pick a single primary suspect.** If you cannot, list two or three candidate pods with the evidence for/against each — that is your diagnosis output. Do not pick the first one alphabetically or the one with the most restarts.
 
+### Critical: "high restart count" is NOT the same as "this is the broken thing"
+
+When multiple pods are broken, do not pick the one with the largest restart count. Apply this generic SRE heuristic:
+
+- **If a pod has restart count > 0 AND its container logs show normal request processing** (real traffic being served, no panics, no startup errors in the logged-before-restart output), then **the container is not crashing on its own — the kubelet is killing it.** That means the **liveness/readiness probe configuration is the bug**, not the application.
+- **If a pod has restart count > 0 AND its container logs show repeated startup errors / OOMKilled / panics / "failed to bind" / missing-dependency errors**, then the **application is crashing on its own** — the workload spec or its dependencies are the bug.
+
+These two patterns produce the same symptom (CrashLoopBackOff with high restart count) but have **completely different root causes**. The decision between them is made by reading the logs, not by reading the restart count.
+
+A pod with 9 restarts that is currently serving traffic successfully is **kubelet-killed**. A pod with 7 restarts whose logs show "out of memory" panics is **app-crashed**. The 9-restart pod's probe is the bug; the 7-restart pod's resource request is the bug. They are different incidents that often appear in the same cluster simultaneously, and the larger-restart-count pod is **not automatically the primary fault** — it may be the **less interesting** one if its application is otherwise healthy.
+
+Whenever the cluster shows multiple broken pods and you find yourself reasoning "this pod has more restarts, so it's the root cause" — **stop and read the logs of the pod with FEWER restarts first**. The lower-restart-count pod often has clearer evidence of the actual injected fault.
+
 If you investigate the wrong pod, the rest of this workflow will produce a confident wrong answer. Step 0 is not optional.
 
 ## Step 1 — Confirm the investigation target and gather identifying inputs
