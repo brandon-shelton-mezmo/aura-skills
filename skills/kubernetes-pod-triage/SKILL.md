@@ -154,7 +154,20 @@ A pod healthy yesterday and broken today usually correlates with a change:
 
 ## Step 7 — Reporting (with root-cause discipline)
 
-**Before you submit your diagnosis, you MUST write the full report below.** A short submission like "I found X, let me check Y" is not a diagnosis — it's an in-progress note. Investigations submitted before a structured report is written produce confused, partial answers that fail downstream evaluation. If you find yourself thinking "I'll submit now and continue investigating," **stop and write the report first.**
+### Diagnostic closure: when you have the answer, COMMIT to it
+
+The single most common reason diagnoses fail evaluation is that the agent **keeps investigating after it already has the answer**, runs out of turns, and submits an in-progress note instead of a verdict.
+
+**You have "the answer" when:**
+- You can name a specific resource (Deployment / Pod / Service / ConfigMap) AND a specific configuration value or state (e.g., "Deployment `frontend` has liveness probe `failureThreshold: 1` with HTTP path `/healthz` that returns 404"), AND
+- That configuration fully explains every observed anomaly (coverage check above passed), AND
+- You have at least one piece of direct evidence (`kubectl describe` output, log line, event message) supporting it.
+
+**The moment you have the answer, stop investigating and write the report.** Do not do "one more check" — that's how you exhaust your budget and submit a partial answer. Do not say "Let me also verify…" if you already have the verdict. **Investigation ends. Report begins.**
+
+If you submit an in-progress note ("I found X, let me check Y") instead of the structured report below, your diagnosis is **incomplete** and will fail evaluation regardless of what you found.
+
+### Report format — write this VERBATIM as your submission
 
 A diagnosis is one primary root cause statement, not a list. Resist the urge to enumerate every anomaly you observed — that is exactly what gets penalized.
 
