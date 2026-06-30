@@ -19,6 +19,7 @@ Before investigating any pod, do this:
 
 1. **Restate the user's symptom verbatim.** If the user said "checkout requests are returning 500," that is the symptom. "A pod is broken" is not the symptom — it is one possible *cause*.
 2. **List currently-broken pods in the relevant scope** (namespace or label selector). Capability: "list pods with their status, restart counts, and age."
+2a. **ALSO list Deployments / StatefulSets and their `availableReplicas` vs `replicas` count.** A Deployment with `availableReplicas: 0` and `replicas: 1` is unhappy *even if its pod momentarily shows `Running`* — the pod is failing readiness/liveness or in the middle of a crash cycle that hasn't accumulated visible restarts yet. Pod restart count lags Deployment availability by minutes. **Treat any Deployment with `availableReplicas < replicas` as a broken pod for triage purposes, regardless of what `kubectl get pods` shows at this instant.**
 3. **For each broken pod, ask three questions:**
    - Does its symptom (CrashLoop, OOMKilled, etc.) plausibly cause the user-reported behavior?
    - How long has it been broken? (Compare its restart age / first-failure event timestamp to when the user-reported incident started. A pod failing for 3 days is unlikely to be the cause of a 10-minute-old outage.)
