@@ -38,6 +38,30 @@ A pod with 9 restarts that is currently serving traffic successfully is **kubele
 
 Whenever the cluster shows multiple broken pods and you find yourself reasoning "this pod has more restarts, so it's the root cause" — **stop and read the logs of the pod with FEWER restarts first**. The lower-restart-count pod often has clearer evidence of the actual injected fault.
 
+### Mandatory: investigate ALL broken pods before committing
+
+When the scope check identifies multiple broken pods, **you must read logs and events from ALL of them before concluding which is primary.** Do not investigate the first broken pod in depth, find any plausible cause, and stop. That is the #1 cause of wrong diagnoses.
+
+Concretely: if `kubectl get pods` shows pods A and B both restarting, you must fetch:
+- `kubectl logs <A> --previous` and `kubectl logs <B> --previous`
+- `kubectl describe pod <A>` and `kubectl describe pod <B>`
+- `kubectl get events --field-selector involvedObject.name=<A>` and same for B
+
+Then compare. Only after you have evidence from every broken pod can you pick a primary suspect.
+
+### Coverage check: your root cause must explain ALL observed anomalies
+
+A correct root cause explains **every** anomaly you observed, not just the most prominent one. If you observe:
+- Pod A is OOMKilled
+- Pod B has restarts but is serving traffic
+- Service C's endpoint returns 5xx
+
+…and your proposed root cause only explains pod A — your root cause is **wrong or incomplete.** Pod B's restarts and Service C's errors must also have an explanation. If they don't, keep investigating.
+
+The most common failure mode: picking a flashy-looking issue (e.g., "pod OOMKilled with low memory limit") that explains *some* of the symptoms, declaring victory, and ignoring symptoms it doesn't explain (e.g., pod B's restarts that happened despite no memory pressure). The unexplained symptoms are *exactly* where the actual root cause hides.
+
+If your candidate root cause does not explain every anomaly, **explicitly write out which anomalies it does not explain** — and then either find a root cause that explains all of them, or report `unknown` with the unexplained-anomaly evidence.
+
 If you investigate the wrong pod, the rest of this workflow will produce a confident wrong answer. Step 0 is not optional.
 
 ## Step 1 — Confirm the investigation target and gather identifying inputs
