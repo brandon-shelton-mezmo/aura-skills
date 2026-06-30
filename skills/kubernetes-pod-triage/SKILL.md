@@ -154,7 +154,9 @@ A pod healthy yesterday and broken today usually correlates with a change:
 
 ## Step 7 — Reporting (with root-cause discipline)
 
-**A diagnosis is one primary root cause statement, not a list.** Resist the urge to enumerate every anomaly you observed — that is exactly what gets penalized.
+**Before you submit your diagnosis, you MUST write the full report below.** A short submission like "I found X, let me check Y" is not a diagnosis — it's an in-progress note. Investigations submitted before a structured report is written produce confused, partial answers that fail downstream evaluation. If you find yourself thinking "I'll submit now and continue investigating," **stop and write the report first.**
+
+A diagnosis is one primary root cause statement, not a list. Resist the urge to enumerate every anomaly you observed — that is exactly what gets penalized.
 
 Conclude with a report in this exact shape:
 
