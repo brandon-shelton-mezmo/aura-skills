@@ -1,0 +1,123 @@
+diff --git a/sregym/conductor/conductor.py b/sregym/conductor/conductor.py
+index 20aded01..f9891646 100644
+--- a/sregym/conductor/conductor.py
++++ b/sregym/conductor/conductor.py
+@@ -1,6 +1,7 @@
+ import asyncio
+ import concurrent.futures
+ import logging
++import os
+ import shutil
+ import time
+ from dataclasses import dataclass
+@@ -334,22 +335,34 @@ class Conductor:
+             problem.recover_fault()
+             self.logger.info("[CLEANUP] Fault recovered")
+ 
+-        # Undeploy app using the captured problem reference
+-        self.logger.info("[CLEANUP] Undeploying app...")
+-        if problem:
+-            problem.app.cleanup()
+-        self.logger.info("[CLEANUP] App undeployed")
+-
+-        # Reconcile cluster state to baseline
+-        if self._baseline_captured:
+-            self.logger.info("[CLEANUP] Reconciling cluster state to baseline...")
+-            try:
+-                changes = self.cluster_state.reconcile_to_baseline()
+-                if any(v for v in changes.values() if v):
+-                    self.logger.info(f"Cluster state reconciliation changes: {changes}")
+-                self.logger.info("[CLEANUP] Cluster state reconciled")
+-            except Exception as e:
+-                self.logger.warning(f"Failed to reconcile cluster state: {e}")
++        # === FAST-ITERATE MODE ===
++        # When SREGYM_KEEP_APP_DEPLOYED=1, skip the app undeploy AND cluster
++        # baseline reconcile. This leaves the workload standing so the NEXT
++        # sregym-run invocation can enter FAST_ITERATE mode and skip the
++        # full deploy cycle. Fault has already been recovered above, so the
++        # next iteration starts from a clean-app state.
++        keep_deployed = os.environ.get("SREGYM_KEEP_APP_DEPLOYED") == "1"
++        if keep_deployed:
++            self.logger.info(
++                "[CLEANUP] SREGYM_KEEP_APP_DEPLOYED=1 — skipping undeploy + baseline reconcile"
++            )
++        else:
++            # Undeploy app using the captured problem reference
++            self.logger.info("[CLEANUP] Undeploying app...")
++            if problem:
++                problem.app.cleanup()
++            self.logger.info("[CLEANUP] App undeployed")
++
++            # Reconcile cluster state to baseline
++            if self._baseline_captured:
++                self.logger.info("[CLEANUP] Reconciling cluster state to baseline...")
++                try:
++                    changes = self.cluster_state.reconcile_to_baseline()
++                    if any(v for v in changes.values() if v):
++                        self.logger.info(f"Cluster state reconciliation changes: {changes}")
++                    self.logger.info("[CLEANUP] Cluster state reconciled")
++                except Exception as e:
++                    self.logger.warning(f"Failed to reconcile cluster state: {e}")
+ 
+         # Set to "done" after all cleanup is complete
+         self.submission_stage = "done"
+@@ -415,12 +428,53 @@ class Conductor:
+         self.get_problem_stages()
+         self._build_stage_sequence()
+ 
+-        self.logger.info("Undeploying app leftovers...")
+-        self.undeploy_app()  # Cleanup any leftovers
+-        self.logger.info("App leftovers undeployed.")
+-        self.logger.info("Deploying app...")
+-        self.deploy_app()
+-        self.logger.info("App deployed.")
++        # === FAST-ITERATE MODE ===
++        # When SREGYM_FAST_ITERATE=1, skip the full undeploy+deploy cycle if the
++        # application namespace already exists (implying a previous iteration
++        # left the workload standing). The recover_fault call at cleanup + the
++        # inject_fault call before diagnosis are sufficient to reset the
++        # fault state for the next iteration. This trades a ~10 min helm cycle
++        # for a ~30-60s fault reset per iteration.
++        #
++        # First iteration must still do a full deploy (namespace doesn't exist
++        # yet). Subsequent iterations reuse. Set SREGYM_KEEP_APP_DEPLOYED=1
++        # on cleanup to keep the app around for the next iteration.
++        fast_iterate = os.environ.get("SREGYM_FAST_ITERATE") == "1"
++        app_ns = getattr(self.problem.app, "namespace", None)
++        app_already_up = False
++        if fast_iterate and app_ns:
++            try:
++                # Namespace exists AND has at least one Ready pod → assume
++                # workload is standing from a prior fast-iterate cycle.
++                out = self.kubectl.exec_command(
++                    f"kubectl get ns {app_ns} --ignore-not-found -o name"
++                )
++                app_already_up = f"namespace/{app_ns}" in (out or "")
++            except Exception as e:
++                self.logger.warning(f"[FAST_ITERATE] namespace probe failed: {e}")
++                app_already_up = False
++
++        if fast_iterate and app_already_up:
++            self.logger.info(
++                f"[FAST_ITERATE] Namespace '{app_ns}' already exists; "
++                "skipping undeploy + full deploy. Fault will be re-injected via _advance_to_next_stage."
++            )
++            # Idempotent baseline capture (deploy_app captures it, so mirror
++            # the branch here so downstream cleanup logic still works.)
++            if not self._baseline_captured:
++                if self.cluster_state.load_baseline_state(CLUSTER_BASELINE_STATE_FILE):
++                    self.logger.info("[FAST_ITERATE] Loaded persisted cluster baseline state")
++                else:
++                    self.logger.info("[FAST_ITERATE] No persisted baseline state; capturing…")
++                    self.cluster_state.save_baseline_state(CLUSTER_BASELINE_STATE_FILE)
++                self._baseline_captured = True
++        else:
++            self.logger.info("Undeploying app leftovers...")
++            self.undeploy_app()  # Cleanup any leftovers
++            self.logger.info("App leftovers undeployed.")
++            self.logger.info("Deploying app...")
++            self.deploy_app()
++            self.logger.info("App deployed.")
+ 
+         # Update NoiseManager with problem context
+         if self.config.enable_noise:

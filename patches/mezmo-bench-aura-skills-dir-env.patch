@@ -1,0 +1,20 @@
+# Patch to mezmo_benchmark/src/mezmo_benchmark/adapters/aura.py
+#
+# Adds AURA_SKILLS_DIR to the env allowlist that mezmo-bench passes to the
+# spawned aura-web-server subprocess. Without this, AURA never sees the
+# env var and its TOML template's {{ env.AURA_SKILLS_DIR }} substitution
+# fails at config-load time with "Missing environment variable(s)".
+#
+# Insertion point: inside the _AURA_ENV_EXACT_NAMES frozenset, adjacent
+# to the other MEZMO_* keys.
+
+--- a/src/mezmo_benchmark/adapters/aura.py
++++ b/src/mezmo_benchmark/adapters/aura.py
+@@ _AURA_ENV_EXACT_NAMES @@
+     "MEZMO_API_KEY",
+     "MEZMO_MCP_URL",
++    # === SKILLS TEST PATCH ===
++    "AURA_SKILLS_DIR",
+ })
+
+ _AURA_ENV_PREFIXES: tuple[str, ...] = (
