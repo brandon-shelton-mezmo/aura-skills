@@ -15,7 +15,19 @@ You must separate **what you observed** from **what you concluded**. Do not prop
 
 The most common cause of a wrong diagnosis is **latching onto the first broken thing you see** instead of the thing causing the user's reported symptom. Pre-existing brokenness (pods that have been failing for hours or days, unrelated to the current incident) is common in real clusters. Don't fall for it.
 
-Before investigating any pod, do this:
+### Step 0.0 — MANDATORY first-turn deliverable: the triage table
+
+**Before any deep-dive investigation, your very first output must be a triage table** enumerating every broken workload with the four columns below. Do NOT read logs, describe pods, or fetch probe specs for any single workload until every broken workload has a row in this table.
+
+| Workload | Failure symptom | Pod AGE | Most recent failure event timestamp |
+|---|---|---|---|
+| (fill in) | (CrashLoop / OOMKilled / probe failure / etc.) | (from `kubectl get pods`) | (from `kubectl get events --sort-by=.lastTimestamp` filtered to this workload) |
+
+Producing this table costs 2-3 kubectl calls (get pods, get deployments, get events) — cheap and mandatory. Deep-diving one workload before producing the table is the #1 way to end up with a confident wrong answer. **The order of rows in this table determines your investigation order in the next steps: deep-dive the row with the freshest failure event first, chronic-looking rows last.**
+
+If your first output does not contain this table, stop and produce it. This is not optional guidance — it is the entry gate to the rest of the workflow.
+
+### Step 0.1 — Restate the symptom and enumerate broken workloads
 
 1. **Restate the user's symptom verbatim.** If the user said "checkout requests are returning 500," that is the symptom. "A pod is broken" is not the symptom — it is one possible *cause*.
 2. **List currently-broken pods in the relevant scope** (namespace or label selector). Capability: "list pods with their status, restart counts, and age."
