@@ -76,6 +76,33 @@ Concretely: if `kubectl get pods` shows pods A and B both restarting, you must f
 
 Then compare. Only after you have evidence from every broken pod can you pick a primary suspect.
 
+### Recency-weighted triage: sort by "when did this last fail" before deep-diving
+
+Real clusters routinely have **chronic pre-existing failures coexisting with a new incident**. A memory-leaking sidecar that OOMKills every 40 minutes is a chronic issue; the workload that started failing 3 minutes ago is the current incident. Both show up in `kubectl get pods` as broken. Both have restart counts > 0. The chronic one usually *looks worse* (higher total restart count, older event history, dramatic-looking exit code) — but it is not the reason you were paged now.
+
+Before deep-diving any single broken workload, do this mechanical step:
+
+1. Run `kubectl get events -n <ns> --sort-by=.lastTimestamp` (or the equivalent capability).
+2. For each broken workload identified in Step 0, note the **timestamp of its most recent failure-type event** (`BackOff`, `Failed`, `Unhealthy`, `Killing`, `OOMKilling`).
+3. Also note the **AGE column** in `kubectl get pods` — the time since the current pod was created. A pod whose AGE is 2m and is already CrashLoopBackOff is a fresh incident; a pod whose AGE is 90m and has been OOMKilling on a slow cycle is chronic.
+4. **Deep-dive in order of recency**, freshest first. If workload A's most recent failure event is 2 minutes old and workload B's is 40 minutes old, investigate A first — even if B has 20× more total restarts.
+
+Chronic-issue red flags (deprioritize these for current-incident diagnosis):
+- Failure events span many minutes/hours with regular cadence (looks like a periodic memory leak, not a probe misconfiguration).
+- The pod's current AGE is much longer than the incident duration you were told about.
+- The container's restart-loop timing is consistent (every ~N minutes) — that pattern indicates the workload runs for N minutes, then dies of a slow resource exhaustion — a chronic bug, not a config error introduced during the current incident window.
+
+Fresh-incident signals (prioritize these):
+- Most recent failure event is within the last few minutes.
+- Pod AGE is short (seconds or a few minutes) — this pod was just created and is already failing.
+- Restart count is low but climbing rapidly — you're watching the failure develop in real time.
+
+**Do not spend more than one deep-dive turn on a workload whose recency signal marks it as chronic** until every fresh-incident-signal workload has also been examined. A high-restart-count chronic OOMKill is not the current incident just because it has the largest number next to it.
+
+### Revision history is not incident history
+
+`kubectl rollout history` and old revision manifests are useful for identifying *when a change was made*, but they do not tell you *when the current incident started*. A ReplicaSet whose current revision is 2 (with a memory limit that differs from revision 1) may have been running as revision 2 for weeks — the difference between revision 1 and revision 2 is not automatically the fault. Only pursue revision-history explanations when: (a) the failure onset timestamp aligns with the revision's `creationTimestamp`, or (b) there is no other candidate root cause. Chasing a rev-1-vs-rev-2 memory limit difference for a chronic OOMKilling workload while a fresh probe-failure incident is unfolding on another workload is a common misprioritization.
+
 ### Coverage check: your root cause must explain ALL observed anomalies
 
 A correct root cause explains **every** anomaly you observed, not just the most prominent one. If you observe:
