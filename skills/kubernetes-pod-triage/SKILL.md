@@ -27,6 +27,30 @@ Producing this table costs 2-3 kubectl calls (get pods, get deployments, get eve
 
 If your first output does not contain this table, stop and produce it. This is not optional guidance — it is the entry gate to the rest of the workflow.
 
+### Step 0.05 — Commit-early rule: probe-misconfiguration is a stealth-fault signature
+
+**Once your triage table has a row whose deep-dive reveals ALL of the following, that IS the primary root cause. Stop investigating other rows and go directly to Step 7 (Report).**
+
+Stealth-fault signature (all three must be true):
+1. The workload has a liveness or readiness probe set with **`failureThreshold: 1`** (or any value < 3).
+2. The probe target returns a **non-2xx status** (typically 404 or 5xx) OR the probe port doesn't match the container's listen port OR the probe path doesn't exist in the app's routes.
+3. The container's app logs show **normal startup and normal request processing** — i.e., the app itself is not crashing.
+
+When you see this triad, the diagnosis is complete. Any other broken workload in the cluster is either (a) downstream impact of this one, or (b) a chronic pre-existing failure — neither is your root cause. **Do not chase revision-history explanations or memory-limit theories on other workloads after finding this signature.** Write the report.
+
+The reason for this rule: a probe-fail-fast + wrong-path + healthy-app combination is a *stealth injected fault* — it's exactly the kind of misconfiguration a human operator introduces (fat-fingered a path, copy-pasted the wrong port, set failureThreshold to 1 during debugging and forgot to reset). Chronic-issue signatures (long uptime, dramatic OOM cascade, gradual memory leak) look more alarming but almost never coexist with a fresh probe-misconfiguration incident by coincidence — the probe-misconfig IS the incident.
+
+### Step 0.06 — Exit code 137 has two meanings; do not confuse them
+
+A container exiting with **code 137** is one of the most common symptoms in a broken pod, and it has two distinct causes that produce identical exit codes but require completely different diagnoses:
+
+| Cause | How to tell | Root cause |
+|---|---|---|
+| **OOMKilled** | `state.terminated.reason: OOMKilled` (or `lastState.terminated.reason: OOMKilled`) — kubelet reports this explicitly. Also: node's kernel log shows an OOM kill event for this container's PID. | Container memory usage exceeded its `limits.memory`. Fix is a memory limit adjustment or a memory leak in the app. |
+| **Liveness-probe SIGKILL** | `state.terminated.reason: Error` or `Completed` with exit code 137, AND there's a recent `Unhealthy` event on the pod (`kubectl describe pod`) referencing the liveness probe. **No `OOMKilled` reason recorded.** | Liveness probe failed, kubelet sent SIGTERM, then SIGKILL (exit 137) after `terminationGracePeriodSeconds` elapsed. The probe configuration is the fault, not memory. |
+
+**Do not attribute a 137 exit to OOMKilled without confirming `reason: OOMKilled` in the container status.** A liveness-killed container looks IDENTICAL to an OOM-killed container in `kubectl get pods` output (both show CrashLoopBackOff with restart count climbing). The disambiguating field is the `terminated.reason` in the pod's per-container status, or the presence/absence of `Unhealthy` events. Missing this distinction is a common cause of a wrong "increase memory limit" mitigation when the real fix is to correct the probe path/port/threshold.
+
 ### Step 0.1 — Restate the symptom and enumerate broken workloads
 
 1. **Restate the user's symptom verbatim.** If the user said "checkout requests are returning 500," that is the symptom. "A pod is broken" is not the symptom — it is one possible *cause*.
