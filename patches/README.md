@@ -84,13 +84,24 @@ with a chronic flagd-ui OOMKill acting as a distractor in the cluster:
 | Setup | Sample scores | Best |
 |---|---|---|
 | Pre-patch (skill content unreached) | 0, 0, 44, 44, 0, 67, 0 | 67 |
-| Post-patch (mandate fires load_skill) | 100 | 100 |
+| Post-patch (mandate fires load_skill) | 100, 100 | 100 |
 
-Diagnosis wall time post-patch: 77 seconds from settle-wait to
+Diagnosis wall time post-patch: ~60-77 seconds from settle-wait to
 correct final answer. The agent's output cites skill sections
 explicitly ("Frontend is the freshest incident", "stealth-fault
 signature") — proof that the loaded SKILL.md content is driving
 the diagnostic reasoning.
+
+**Skill-agnostic form**: the mandate does NOT hard-code
+`kubernetes-pod-triage`; instead it directs the LLM to route to the
+skill whose catalog `description:` best matches the symptom, with
+routing hints (pod / network / service-connectivity /
+capacity-saturation). Verified: with all four kubernetes-*-triage
+skills registered, the LLM autonomously chose `kubernetes-pod-triage`
+for the liveness-probe problem (grep of `aura-startup.log` showed
+4× `Loading skill 'kubernetes-pod-triage'` across diagnosis +
+mitigation, no other skill loaded). This form should generalize to
+network, service, and saturation problems without further patches.
 
 Apply with: `patch -p1 < patches/mezmo-bench-load-skill-mandate.patch`
 inside the mezmo_benchmark checkout.

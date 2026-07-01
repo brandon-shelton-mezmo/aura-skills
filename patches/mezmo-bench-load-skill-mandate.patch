@@ -1,35 +1,25 @@
-# Patch to mezmo_benchmark/config/aura-sregym.toml.template
-#
-# Adds a MANDATORY first-action instruction telling the agent to
-# invoke load_skill(name="kubernetes-pod-triage") BEFORE any other
-# tool call. Without this mandate, the agent registers the load_skill
-# tool at boot but never actually invokes it — so the aura-skills
-# SKILL.md content never reaches the model's context, only the
-# TOML system_prompt + skill DESCRIPTIONS in the catalog.
-#
-# Impact measured: 0-67 (Bedrock variance, no skill content) →
-# 100.0 (skill content loaded, agent applies triage discipline).
-# Diagnosis wall time: 77 seconds after fault-manifest settle-wait.
-#
-# Insertion: top of the "## SREGym-specific operational notes"
-# section, so it's scoped to the SREGym benchmark and doesn't
-# pollute the shared aura-sre-preamble.md.
-
---- a/config/aura-sregym.toml.template
-+++ b/config/aura-sregym.toml.template
-@@ ## SREGym-specific operational notes @@
+Warning: Permanently added '100.55.31.93' (ED25519) to the list of known hosts.
+--- /tmp/toml-template.bak	2026-07-01 19:12:39.746010045 +0000
++++ /home/ec2-user/code/mezmo_benchmark/config/aura-sregym.toml.template	2026-07-01 19:35:33.532132476 +0000
+@@ -109,6 +109,21 @@
+ 
  ## SREGym-specific operational notes
-
+ 
 +- **MANDATORY first action** — before any other tool call, invoke
-+  `load_skill` with `name="kubernetes-pod-triage"`. This skill contains
-+  Kubernetes-specific triage discipline (multi-fault triage-table
-+  requirement, recency-weighted ordering, probe-misconfiguration
-+  stealth-fault signature, exit-code 137 disambiguation) required for a
-+  correct diagnosis on this benchmark. Do NOT begin `exec_read_only_
-+  kubectl_cmd` calls until you have called `load_skill` and read the
-+  returned SKILL.md content. If you attempt any other tool call first,
-+  the harness may terminate your diagnosis before the skill guidance is
++  `load_skill` to load the skill whose catalog `description:` best
++  matches the user-reported symptom. The skill descriptions cross-
++  reference each other; use them to route (e.g., pod-level
++  CrashLoopBackOff → `kubernetes-pod-triage`; DNS/NetworkPolicy →
++  `kubernetes-network-triage`; healthy pods but service unreachable →
++  `kubernetes-service-connectivity-triage`; high latency / saturation →
++  `kubernetes-capacity-saturation-triage`). If the symptom is
++  ambiguous, start with the most general triage skill for the
++  substrate. Do NOT begin substrate tool calls (kubectl, prometheus,
++  jaeger) until at least one skill is loaded — the SKILL.md content is
++  where the substrate-specific diagnostic discipline lives, and without
++  it the harness may terminate your diagnosis before that guidance is
 +  in your context.
 +
  - The user message contains instructions about your stage (DIAGNOSIS or
-   MITIGATION). Follow them.
+   MITIGATION). Follow them. Stratus's published references to
+   `submit_tool`, `f_submit_tool`, `exec_read_only_kubectl_cmd`, etc.
