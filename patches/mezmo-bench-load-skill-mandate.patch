@@ -1,0 +1,35 @@
+# Patch to mezmo_benchmark/config/aura-sregym.toml.template
+#
+# Adds a MANDATORY first-action instruction telling the agent to
+# invoke load_skill(name="kubernetes-pod-triage") BEFORE any other
+# tool call. Without this mandate, the agent registers the load_skill
+# tool at boot but never actually invokes it — so the aura-skills
+# SKILL.md content never reaches the model's context, only the
+# TOML system_prompt + skill DESCRIPTIONS in the catalog.
+#
+# Impact measured: 0-67 (Bedrock variance, no skill content) →
+# 100.0 (skill content loaded, agent applies triage discipline).
+# Diagnosis wall time: 77 seconds after fault-manifest settle-wait.
+#
+# Insertion: top of the "## SREGym-specific operational notes"
+# section, so it's scoped to the SREGym benchmark and doesn't
+# pollute the shared aura-sre-preamble.md.
+
+--- a/config/aura-sregym.toml.template
++++ b/config/aura-sregym.toml.template
+@@ ## SREGym-specific operational notes @@
+ ## SREGym-specific operational notes
+
++- **MANDATORY first action** — before any other tool call, invoke
++  `load_skill` with `name="kubernetes-pod-triage"`. This skill contains
++  Kubernetes-specific triage discipline (multi-fault triage-table
++  requirement, recency-weighted ordering, probe-misconfiguration
++  stealth-fault signature, exit-code 137 disambiguation) required for a
++  correct diagnosis on this benchmark. Do NOT begin `exec_read_only_
++  kubectl_cmd` calls until you have called `load_skill` and read the
++  returned SKILL.md content. If you attempt any other tool call first,
++  the harness may terminate your diagnosis before the skill guidance is
++  in your context.
++
+ - The user message contains instructions about your stage (DIAGNOSIS or
+   MITIGATION). Follow them.

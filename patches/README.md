@@ -60,6 +60,41 @@ Apply with: `patch -p1 < patches/mezmo-bench-aura-skills-dir-env.patch`
 inside the mezmo_benchmark checkout. Insertion point is inside the
 `_AURA_ENV_EXACT_NAMES` frozenset, next to the other `MEZMO_*` entries.
 
+### `mezmo-bench-load-skill-mandate.patch`
+
+**Applies to**: `mezmo_benchmark` project,
+`config/aura-sregym.toml.template`.
+
+**What it adds**: a "MANDATORY first action" instruction at the top
+of the SREGym-specific operational-notes section, telling the agent
+to invoke `load_skill(name="kubernetes-pod-triage")` before any other
+tool call.
+
+**Why this patch is load-bearing**: without it, AURA registers the
+`load_skill` and `read_skill_file` tools at boot but the agent never
+actually invokes them — the SKILL.md content therefore never enters
+the model's context, only the skill catalog descriptions do. Verified
+by `grep load_skill` in `aura-startup.log`: pre-patch runs show a
+single "Adding skill tools" registration line and no subsequent
+`load_skill` tool calls.
+
+**Measured impact** on `liveness_probe_misconfiguration_astronomy_shop`
+with a chronic flagd-ui OOMKill acting as a distractor in the cluster:
+
+| Setup | Sample scores | Best |
+|---|---|---|
+| Pre-patch (skill content unreached) | 0, 0, 44, 44, 0, 67, 0 | 67 |
+| Post-patch (mandate fires load_skill) | 100 | 100 |
+
+Diagnosis wall time post-patch: 77 seconds from settle-wait to
+correct final answer. The agent's output cites skill sections
+explicitly ("Frontend is the freshest incident", "stealth-fault
+signature") — proof that the loaded SKILL.md content is driving
+the diagnostic reasoning.
+
+Apply with: `patch -p1 < patches/mezmo-bench-load-skill-mandate.patch`
+inside the mezmo_benchmark checkout.
+
 ## Related
 
 Both patches enable the workflow described in

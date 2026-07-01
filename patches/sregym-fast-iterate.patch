@@ -1,5 +1,5 @@
 diff --git a/sregym/conductor/conductor.py b/sregym/conductor/conductor.py
-index 20aded01..f9891646 100644
+index 20aded01..7b0926b3 100644
 --- a/sregym/conductor/conductor.py
 +++ b/sregym/conductor/conductor.py
 @@ -1,6 +1,7 @@
@@ -10,7 +10,30 @@ index 20aded01..f9891646 100644
  import shutil
  import time
  from dataclasses import dataclass
-@@ -334,22 +335,34 @@ class Conductor:
+@@ -221,6 +222,22 @@ class Conductor:
+         self.logger.info("[ENV] Injected fault")
+         self.fault_injected = True
+ 
++        # === FAST-ITERATE MODE ===
++        # In full setup mode, the ~10 min helm cycle before this call gives
++        # the injected fault plenty of time to manifest in cluster state
++        # (probe failures cascade into CrashLoopBackOff, deployments show
++        # availableReplicas: 0, etc.) before the agent starts diagnosing.
++        # In FAST_ITERATE mode, we skip that helm cycle, so the injected
++        # fault has almost no time to become observable. Add a settle wait
++        # so the agent sees a realistic post-fault cluster state.
++        if os.environ.get("SREGYM_FAST_ITERATE") == "1":
++            settle = int(os.environ.get("SREGYM_FAULT_SETTLE_SECONDS", "75"))
++            self.logger.info(
++                f"[FAST_ITERATE] Waiting {settle}s for injected fault to manifest…"
++            )
++            time.sleep(settle)
++            self.logger.info("[FAST_ITERATE] Settle wait complete; fault should now be visible")
++
+         # Prepare diagnosis checkpoint if available, after fault injection but before agent stages
+         if (
+             hasattr(problem, "diagnosis_oracle")
+@@ -334,22 +351,34 @@ class Conductor:
              problem.recover_fault()
              self.logger.info("[CLEANUP] Fault recovered")
  
@@ -61,7 +84,7 @@ index 20aded01..f9891646 100644
  
          # Set to "done" after all cleanup is complete
          self.submission_stage = "done"
-@@ -415,12 +428,53 @@ class Conductor:
+@@ -415,12 +444,53 @@ class Conductor:
          self.get_problem_stages()
          self._build_stage_sequence()
  
